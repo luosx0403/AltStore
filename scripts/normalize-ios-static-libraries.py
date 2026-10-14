@@ -8,15 +8,38 @@ libtool regenerates the symbol table and aligns each Mach-O archive member.
 import argparse
 import hashlib
 from pathlib import Path
-import shutil
+import struct
 import subprocess
 import tempfile
 
 
-def members(path):
+def arm64_archive(path):
     data = path.read_bytes()
+    if data.startswith(b"!<arch>\n"):
+        return data
+    # New lipo also rejects the old member alignment. Read the universal
+    # container directly; only its arm64 slice is needed for this build.
+    if data[:4] not in (b"\xca\xfe\xba\xbe", b"\xca\xfe\xba\xbf"):
+        raise ValueError(f"Unknown universal archive: {path}")
+    count = struct.unpack_from(">I", data, 4)[0]
+    fat64 = data[:4] == b"\xca\xfe\xba\xbf"
+    width = 32 if fat64 else 20
+    slices = []
+    for index in range(count):
+        fields = struct.unpack_from(">IIQQII" if fat64 else ">IIIII", data, 8 + index * width)
+        cpu, subtype, offset, size = fields[:4]
+        if cpu == 0x0100000C and subtype & 0xFFFFFF == 0:
+            if offset + size > len(data):
+                raise ValueError("Truncated arm64 slice")
+            slices.append(data[offset:offset + size])
+    if len(slices) != 1:
+        raise ValueError("Expected exactly one arm64 slice")
+    return slices[0]
+
+
+def members(data):
     if not data.startswith(b"!<arch>\n"):
-        raise ValueError(f"Not a thin archive: {path}")
+        raise ValueError("Not a thin archive")
     result = {}
     offset = 8
     while offset < len(data):
@@ -41,6 +64,8 @@ def members(path):
             payload = data[start:end]
             if payload[:4] != b"\xcf\xfa\xed\xfe":
                 raise ValueError(f"Expected 64-bit Mach-O object: {name}")
+            if struct.unpack_from("<I", payload, 4)[0] != 0x0100000C:
+                raise ValueError(f"Expected arm64 object: {name}")
             result[name] = (payload, start)
         elif not name.startswith("__.SYMDEF"):
             raise ValueError(f"Unexpected archive member: {name}")
@@ -51,18 +76,9 @@ def members(path):
 
 
 def normalize(path):
-    architectures = subprocess.check_output(
-        ["xcrun", "lipo", "-archs", str(path)], text=True).split()
-    if "arm64" not in architectures:
-        raise ValueError(f"Missing arm64: {path}")
+    original = members(arm64_archive(path))
     with tempfile.TemporaryDirectory(prefix="altstore-archive-", dir=path.parent) as directory:
         scratch = Path(directory)
-        thin = scratch / "original.a"
-        if len(architectures) > 1:
-            subprocess.run(["xcrun", "lipo", str(path), "-thin", "arm64", "-output", str(thin)], check=True)
-        else:
-            shutil.copyfile(path, thin)
-        original = members(thin)
         objects = []
         for name, (payload, _) in original.items():
             obj = scratch / name
@@ -70,7 +86,7 @@ def normalize(path):
             objects.append(str(obj))
         output = scratch / "aligned.a"
         subprocess.run(["xcrun", "libtool", "-static", "-o", str(output), *objects], check=True)
-        rebuilt = members(output)
+        rebuilt = members(output.read_bytes())
         if original.keys() != rebuilt.keys():
             raise ValueError("Object membership changed")
         for name, (payload, offset) in rebuilt.items():
