@@ -1,0 +1,78 @@
+name: Build AltServer -80045 Hotfix
+
+on:
+  push:
+    branches:
+      - hotfix/apple-80045
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: altserver-hotfix-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: xcode-27
+    timeout-minutes: 45
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
+    steps:
+      - name: Check out source and pinned submodules
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Apply GrandSlam and 2FA hotfix
+        run: sh scripts/apply-apple-80045-hotfix.sh
+
+      - name: Record build environment
+        run: |
+          mkdir -p build/artifacts
+          {
+            git rev-parse HEAD
+            sw_vers
+            uname -m
+            xcodebuild -version
+            git submodule status
+          } > build/artifacts/build-info.txt
+          cat build/artifacts/build-info.txt
+
+      - name: Run offline authentication regressions
+        run: python3 Tests/Apple80045/run.py | tee build/artifacts/regression.log
+
+      - name: Build AltServer for Apple Silicon
+        run: |
+          xcodebuild \
+            -workspace AltStore.xcworkspace \
+            -scheme AltServer \
+            -configuration Release \
+            -destination 'generic/platform=macOS' \
+            -derivedDataPath build/DerivedData \
+            -resultBundlePath build/AltServer.xcresult \
+            ARCHS=arm64 ONLY_ACTIVE_ARCH=YES \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY= DEVELOPMENT_TEAM= \
+            ENABLE_USER_SCRIPT_SANDBOXING=NO \
+            build 2>&1 | tee build/artifacts/xcodebuild.log
+
+      - name: Sign and package personal build
+        run: |
+          app=build/DerivedData/Build/Products/Release/AltServer.app
+          test -d "$app"
+          python3 scripts/sign-personal-macos-app.py "$app"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          ditto -c -k --sequesterRsrc --keepParent "$app" build/artifacts/AltServer-80045-arm64.zip
+          shasum -a 256 build/artifacts/AltServer-80045-arm64.zip > build/artifacts/SHA256SUMS
+
+      - name: Upload app and diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: AltServer-80045-arm64-${{ github.run_number }}
+          path: build/artifacts/
+          if-no-files-found: warn
+          retention-days: 14

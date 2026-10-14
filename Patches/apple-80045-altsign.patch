@@ -1,0 +1,89 @@
+diff --git a/AltSign/Sources/ALTAppleAPI+Authentication.swift b/AltSign/Sources/ALTAppleAPI+Authentication.swift
+index 2e5afe0..c3af424 100644
+--- a/AltSign/Sources/ALTAppleAPI+Authentication.swift
++++ b/AltSign/Sources/ALTAppleAPI+Authentication.swift
+@@ -115,13 +115,17 @@ public extension ALTAppleAPI
+                             
+                             context.dsid = dsid
+                             
+-                            let authType = statusDictionary["au"] as? String
++                            let reportedAuthType = statusDictionary["au"] as? String
++                            // TEMP -80045 workaround (2026-10): Apple can push a trusted-device
++                            // code during sign-in and return hsc=409 without an auth type.
++                            let codeAlreadySent = (reportedAuthType == nil || reportedAuthType == "") && (statusDictionary["hsc"] as? Int == 409)
++                            let authType = codeAlreadySent ? "trustedDeviceSecondaryAuth" : reportedAuthType
+                             switch authType
+                             {
+                             case "trustedDeviceSecondaryAuth":
+                                 guard let verificationHandler = verificationHandler else { throw ALTAppleAPIError(.requiresTwoFactorAuthentication) }
+                                 
+-                                self.requestTrustedDeviceTwoFactorCode(dsid: dsid, idmsToken: idmsToken, anisetteData: anisetteData, verificationHandler: verificationHandler) { (result) in
++                                self.requestTrustedDeviceTwoFactorCode(dsid: dsid, idmsToken: idmsToken, anisetteData: anisetteData, codeAlreadySent: codeAlreadySent, verificationHandler: verificationHandler) { (result) in
+                                     switch result
+                                     {
+                                     case .failure(let error): completionHandler(nil, nil, error)
+@@ -232,6 +236,7 @@ private extension ALTAppleAPI
+     func requestTrustedDeviceTwoFactorCode(dsid: String,
+                                            idmsToken: String,
+                                            anisetteData: ALTAnisetteData,
++                                           codeAlreadySent: Bool = false,
+                                            verificationHandler: @escaping (@escaping (String?) -> Void) -> Void,
+                                            completionHandler: @escaping (Result<Void, Error>) -> Void)
+     {
+@@ -240,7 +245,7 @@ private extension ALTAppleAPI
+         
+         let request = self.makeTwoFactorCodeRequest(url: requestURL, dsid: dsid, idmsToken: idmsToken, anisetteData: anisetteData)
+         
+-        let requestCodeTask = self.session.dataTask(with: request) { (data, response, error) in
++        let handleCodeRequest = { (error: Error?) in
+             do
+             {
+                 guard error == nil else { throw error! }
+@@ -317,7 +322,19 @@ private extension ALTAppleAPI
+             }
+         }
+         
+-        requestCodeTask.resume()
++        // TEMP -80045 workaround (2026-10): don't request a second code when
++        // Apple's sign-in response says one has already been pushed.
++        if codeAlreadySent
++        {
++            handleCodeRequest(nil)
++        }
++        else
++        {
++            let requestCodeTask = self.session.dataTask(with: request) { (_, _, error) in
++                handleCodeRequest(error)
++            }
++            requestCodeTask.resume()
++        }
+     }
+     
+     func requestSMSTwoFactorCode(dsid: String,
+@@ -445,6 +462,17 @@ private extension ALTAppleAPI
+         do
+         {
+             let requestURL = URL(string: "https://gsa.apple.com/grandslam/GsService2")!
++
++            var clientInfo = anisetteData.deviceDescription
++            #if os(macOS)
++            if #available(macOS 27, *)
++            {
++                // TEMP -80045 workaround (2026-10): AltServer on macOS 27 uses
++                // Android CoreADI via AnisetteKit. Match that identity only for
++                // GrandSlam; provisioning, SMS 2FA and Developer APIs keep Mac info.
++                clientInfo = "<Pixel 5> <Android;11;RQ3A.211001.001> <com.apple.AuthKit/1 (com.apple.akd/1.0)>"
++            }
++            #endif
+             
+             let parameters = [
+                 "Header": ["Version": "1.0.1"],
+@@ -453,7 +481,7 @@ private extension ALTAppleAPI
+             
+             let httpHeaders = [
+                 "Content-Type": "text/x-xml-plist",
+-                "X-MMe-Client-Info": anisetteData.deviceDescription,
++                "X-MMe-Client-Info": clientInfo,
+                 "Accept": "*/*",
+                 "User-Agent": "AuthKit/1 (Macintosh; OS X 26.5.2) (com.apple.dt.Xcode/26.0)"
+             ]
