@@ -40,7 +40,7 @@ AltSign 是子模块，父仓库只会显示 dirty，直接提交父仓库不会
 
 CI 使用显式 bash / pipefail，保证 tee 不会掩盖 xcodebuild 失败。Xcode 27 要求最低 macOS 12，因此此个人 arm64 构建统一以 MACOSX_DEPLOYMENT_TARGET=12.0 覆盖旧依赖的 macOS 11 设置。此 App 只构建 normal 变体，关闭 CoreCrypto 默认启用的 deep static analyzer，避免生成 trace/noasm 变体和重复分析。源工程和依赖原有部署配置保留。
 
-`Patches/xcode-27-altsign-build.patch` 将名为 AltSign-Static 的 SwiftPM 产品明确声明为 static；同时移除 AltServer 目标中未使用的 AltSign-Dynamic 产品依赖。实际链接阶段使用 Static，但旧目标列表仍额外要求 Dynamic，导致 Xcode 27 生成中间 ldid.framework 并因无法解析父工程链接的 OpenSSL 符号失败。此次只保留 App 使用的静态产品，使用源工程已有的 OpenSSL/CoreCrypto 链接关系。其他目标的 Dynamic 产品依赖保留。应用脚本同时重放认证补丁和 SwiftPM 构建补丁；这是构建方式修正，不涉及认证协议。
+`Patches/xcode-27-altsign-build.patch` 将名为 AltSign-Static 的 SwiftPM 产品明确声明为 static；同时移除 AltServer 及其 AltJIT 辅助程序中未使用的 AltSign-Dynamic 产品依赖。实际链接阶段使用 Static，但旧目标列表仍额外要求 Dynamic，导致 Xcode 27 生成中间 ldid.framework 并因无法解析父工程链接的 OpenSSL 符号失败。此次只保留 App 使用的静态产品，使用源工程已有的 OpenSSL/CoreCrypto 链接关系。AltJIT 还移除了指向已不存在的 macOS 14 SDK 的旧私有 CoreCrypto stub，保留自建 corecrypto_static.a。测试目标的 Dynamic 产品依赖保留。应用脚本同时重放认证补丁和 SwiftPM 构建补丁；这是构建方式修正，不涉及认证协议。
 
 只撤回本补丁时，在确认没有后续重叠修改后执行：
 

@@ -1449,7 +1449,6 @@
 			files = (
 				D53FB4C530537307000546E8 /* libcorecrypto_static.a in Frameworks */,
 				D53FB4C430537302000546E8 /* AltSign-Static in Frameworks */,
-				D537C85B2AA9507A009A1E08 /* libcorecrypto.tbd in Frameworks */,
 				D5FB7A2E2AA2859400EF863D /* ArgumentParser in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -2917,7 +2916,6 @@
 			name = AltJIT;
 			packageProductDependencies = (
 				D5FB7A2D2AA2859400EF863D /* ArgumentParser */,
-				D52DD35D2AAA89A600A7F2B6 /* AltSign-Dynamic */,
 				D53FB4C330537302000546E8 /* AltSign-Static */,
 			);
 			productName = AltJIT;
