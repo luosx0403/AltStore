@@ -57,7 +57,7 @@ jobs:
             -destination 'generic/platform=macOS' \
             -derivedDataPath build/DerivedData \
             -resultBundlePath build/AltServer.xcresult \
-            ARCHS=arm64 ONLY_ACTIVE_ARCH=YES MACOSX_DEPLOYMENT_TARGET=12.0 \
+            ARCHS=arm64 ONLY_ACTIVE_ARCH=YES MACOSX_DEPLOYMENT_TARGET=27.0 \
             BUILD_VARIANTS=normal RUN_CLANG_STATIC_ANALYZER=NO \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY= DEVELOPMENT_TEAM= \
