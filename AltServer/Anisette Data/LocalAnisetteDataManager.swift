@@ -149,7 +149,7 @@ private extension LocalAnisetteDataManager
             throw AnisetteError.missingValue("routingInfo")
         }
         
-        return ALTAnisetteData(machineID: machineID,
+        let anisetteData = ALTAnisetteData(machineID: machineID,
                                oneTimePassword: oneTimePassword,
                                localUserID: localUserID,
                                routingInfo: routingInfo,
@@ -159,5 +159,10 @@ private extension LocalAnisetteDataManager
                                date: Date(),
                                locale: .current,
                                timeZone: .current)
+
+        // TEMP -80045 workaround (2026-10): send Android CoreADI provenance to
+        // patched iOS clients without changing provisioning or SMS client info.
+        anisetteData.authenticationDeviceDescription = "<Pixel 5> <Android;11;RQ3A.211001.001> <com.apple.AuthKit/1 (com.apple.akd/1.0)>"
+        return anisetteData
     }
 }

@@ -1,5 +1,102 @@
+diff --git a/AltSign/Model/Apple API/ALTAnisetteData.h b/AltSign/Model/Apple API/ALTAnisetteData.h
+index 056f09f..f6405eb 100644
+--- a/AltSign/Model/Apple API/ALTAnisetteData.h	
++++ b/AltSign/Model/Apple API/ALTAnisetteData.h	
+@@ -20,6 +20,9 @@ NS_ASSUME_NONNULL_BEGIN
+ @property (nonatomic, copy) NSString *deviceUniqueIdentifier;
+ @property (nonatomic, copy) NSString *deviceSerialNumber;
+ @property (nonatomic, copy) NSString *deviceDescription;
++// TEMP -80045 workaround (2026-10): GrandSlam identity for this data's provider.
++// Keep deviceDescription for SMS verification and Developer Services.
++@property (nonatomic, copy, nullable) NSString *authenticationDeviceDescription;
+ 
+ @property (nonatomic, copy) NSDate *date;
+ @property (nonatomic, copy) NSLocale *locale;
+diff --git a/AltSign/Model/Apple API/ALTAnisetteData.m b/AltSign/Model/Apple API/ALTAnisetteData.m
+index 5680244..f56b99a 100644
+--- a/AltSign/Model/Apple API/ALTAnisetteData.m	
++++ b/AltSign/Model/Apple API/ALTAnisetteData.m	
+@@ -64,6 +64,8 @@ - (BOOL)isEqual:(id)object
+                     [self.deviceUniqueIdentifier isEqualToString:anisetteData.deviceUniqueIdentifier] &&
+                     [self.deviceSerialNumber isEqualToString:anisetteData.deviceSerialNumber] &&
+                     [self.deviceDescription isEqualToString:anisetteData.deviceDescription] &&
++                    ((self.authenticationDeviceDescription == nil && anisetteData.authenticationDeviceDescription == nil) ||
++                     [self.authenticationDeviceDescription isEqualToString:anisetteData.authenticationDeviceDescription]) &&
+                     [self.date isEqualToDate:anisetteData.date] &&
+                     [self.locale isEqual:anisetteData.locale] &&
+                     [self.timeZone isEqualToTimeZone:anisetteData.timeZone]);
+@@ -79,6 +81,7 @@ - (NSUInteger)hash
+             self.deviceUniqueIdentifier.hash ^
+             self.deviceSerialNumber.hash ^
+             self.deviceDescription.hash ^
++            self.authenticationDeviceDescription.hash ^
+             self.date.hash ^
+             self.locale.hash ^
+             self.timeZone.hash);
+@@ -99,6 +102,7 @@ - (nonnull id)copyWithZone:(nullable NSZone *)zone
+                                                                   date:self.date
+                                                                 locale:self.locale
+                                                               timeZone:self.timeZone];
++    copy.authenticationDeviceDescription = self.authenticationDeviceDescription;
+     
+     return copy;
+ }
+@@ -130,6 +134,11 @@ - (instancetype)initWithCoder:(NSCoder *)decoder
+                       date:date
+                     locale:locale
+                   timeZone:timeZone];
++
++    if ([decoder containsValueForKey:NSStringFromSelector(@selector(authenticationDeviceDescription))])
++    {
++        self.authenticationDeviceDescription = [decoder decodeObjectOfClass:[NSString class] forKey:NSStringFromSelector(@selector(authenticationDeviceDescription))];
++    }
+     
+     return self;
+ }
+@@ -144,6 +153,10 @@ - (void)encodeWithCoder:(NSCoder *)encoder
+     [encoder encodeObject:self.deviceUniqueIdentifier forKey:NSStringFromSelector(@selector(deviceUniqueIdentifier))];
+     [encoder encodeObject:self.deviceSerialNumber forKey:NSStringFromSelector(@selector(deviceSerialNumber))];
+     [encoder encodeObject:self.deviceDescription forKey:NSStringFromSelector(@selector(deviceDescription))];
++    if (self.authenticationDeviceDescription != nil)
++    {
++        [encoder encodeObject:self.authenticationDeviceDescription forKey:NSStringFromSelector(@selector(authenticationDeviceDescription))];
++    }
+     
+     [encoder encodeObject:self.date forKey:NSStringFromSelector(@selector(date))];
+     [encoder encodeObject:self.locale forKey:NSStringFromSelector(@selector(locale))];
+@@ -195,6 +208,7 @@ - (instancetype)initWithJSON:(NSDictionary<NSString *,NSString *> *)json
+                               date:date
+                             locale:locale
+                           timeZone:timeZone];
++    self.authenticationDeviceDescription = json[@"authenticationDeviceDescription"];
+     return self;
+ }
+ 
+@@ -202,7 +216,7 @@ - (instancetype)initWithJSON:(NSDictionary<NSString *,NSString *> *)json
+ {
+     NSISO8601DateFormatter *dateFormatter = [[NSISO8601DateFormatter alloc] init];
+     
+-    NSDictionary<NSString *,NSString *> *json = @{
++    NSMutableDictionary<NSString *,NSString *> *json = [@{
+         @"machineID": self.machineID,
+         @"oneTimePassword": self.oneTimePassword,
+         @"localUserID": self.localUserID,
+@@ -215,7 +229,12 @@ - (instancetype)initWithJSON:(NSDictionary<NSString *,NSString *> *)json
+         
+         // NSTimeZone.abbreviation may be nil, so provide defaults.
+         @"timeZone": self.timeZone.abbreviation ?: NSTimeZone.localTimeZone.abbreviation ?: @"PST"
+-    };
++    } mutableCopy];
++
++    if (self.authenticationDeviceDescription != nil)
++    {
++        json[@"authenticationDeviceDescription"] = self.authenticationDeviceDescription;
++    }
+     
+     return json;
+ }
 diff --git a/AltSign/Sources/ALTAppleAPI+Authentication.swift b/AltSign/Sources/ALTAppleAPI+Authentication.swift
-index 2e5afe0..c3af424 100644
+index 2e5afe0..4fe873b 100644
 --- a/AltSign/Sources/ALTAppleAPI+Authentication.swift
 +++ b/AltSign/Sources/ALTAppleAPI+Authentication.swift
 @@ -115,13 +115,17 @@ public extension ALTAppleAPI
@@ -60,14 +157,16 @@ index 2e5afe0..c3af424 100644
      }
      
      func requestSMSTwoFactorCode(dsid: String,
-@@ -445,6 +462,17 @@ private extension ALTAppleAPI
+@@ -445,6 +462,19 @@ private extension ALTAppleAPI
          do
          {
              let requestURL = URL(string: "https://gsa.apple.com/grandslam/GsService2")!
 +
-+            var clientInfo = anisetteData.deviceDescription
++            // TEMP -80045 workaround (2026-10): preserve the provider's GrandSlam
++            // identity across AltServer's JSON response to an iOS AltStore client.
++            var clientInfo = anisetteData.authenticationDeviceDescription ?? anisetteData.deviceDescription
 +            #if os(macOS)
-+            if #available(macOS 27, *)
++            if #available(macOS 27, *), anisetteData.authenticationDeviceDescription == nil
 +            {
 +                // TEMP -80045 workaround (2026-10): AltServer on macOS 27 uses
 +                // Android CoreADI via AnisetteKit. Match that identity only for
@@ -78,7 +177,7 @@ index 2e5afe0..c3af424 100644
              
              let parameters = [
                  "Header": ["Version": "1.0.1"],
-@@ -453,7 +481,7 @@ private extension ALTAppleAPI
+@@ -453,7 +483,7 @@ private extension ALTAppleAPI
              
              let httpHeaders = [
                  "Content-Type": "text/x-xml-plist",

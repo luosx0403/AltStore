@@ -21,6 +21,7 @@ public class ALTAnisetteData: NSObject {
     var routingInfo: UInt64 = 17106176
     var deviceSerialNumber = "fixture-serial"
     var deviceDescription = "<MacBookPro18,3> <macOS;26.6;25F84> <com.apple.AuthKit/1 (com.apple.akd/1.0)>"
+    var authenticationDeviceDescription: String? = "<Pixel 5> <Android;11;RQ3A.211001.001> <com.apple.AuthKit/1 (com.apple.akd/1.0)>"
     var date = Date()
     var locale = Locale(identifier: "en_US")
     var timeZone = TimeZone(secondsFromGMT: 0)!
@@ -95,9 +96,11 @@ func runCase(_ name: String, status: [String: Any], expectTrustedRequest: Bool =
              expectSMS: Bool = false, suppliedCode: String? = "123456",
              hasHandler: Bool = true, validationError: Bool = false,
              serverHTTP: Int = 200, serverError: Int = 0,
-             expectedError: ALTAppleAPIError.Code? = nil, underlyingError: Int? = nil) {
+             expectedError: ALTAppleAPIError.Code? = nil, underlyingError: Int? = nil,
+             hasProviderIdentity: Bool = true) {
     let api = ALTAppleAPI(), anisette = ALTAnisetteData()
     let originalDescription = anisette.deviceDescription
+    if !hasProviderIdentity { anisette.authenticationDeviceDescription = nil }
     let android = "<Pixel 5> <Android;11;RQ3A.211001.001> <com.apple.AuthKit/1 (com.apple.akd/1.0)>"
     var validated = false, trustedRequests = 0, smsRequests = 0, verificationRequests = 0, prompts = 0, appTokens = 0
     let completion = DispatchSemaphore(value: 0)
@@ -105,8 +108,10 @@ func runCase(_ name: String, status: [String: Any], expectTrustedRequest: Bool =
     FixtureProtocol.handler = { request in
         let path = request.url!.path
         if path == "/grandslam/GsService2" {
-            let expectedInfo: String
-            if #available(macOS 27, *) { expectedInfo = android } else { expectedInfo = originalDescription }
+            var expectedInfo = anisette.authenticationDeviceDescription ?? originalDescription
+            if fixtureClientPlatform == "macos" {
+                if #available(macOS 27, *) { expectedInfo = android }
+            }
             require(request.value(forHTTPHeaderField: "X-MMe-Client-Info") == expectedInfo, "GrandSlam identity")
             require(request.value(forHTTPHeaderField: "User-Agent") == "AuthKit/1 (Macintosh; OS X 26.5.2) (com.apple.dt.Xcode/26.0)", "Existing 503 User-Agent changed")
             require(request.httpMethod == "POST", "GrandSlam method")
@@ -188,5 +193,6 @@ func runRegressionTests() {
     runCase("503 HTML remains an HTTP error", status: ["ec": 0], serverHTTP: 503, expectedError: .unknown)
     runCase("server -80045 still propagates", status: ["ec": 0], serverError: -80045, underlyingError: -80045)
     runCase("incorrect credentials still propagate", status: ["ec": 0], serverError: -20101, expectedError: .incorrectCredentials)
-    print("11 offline authentication regression cases passed.")
+    runCase("legacy provider without identity retains platform fallback", status: ["ec": 0, "hsc": 200], hasProviderIdentity: false)
+    print("12 offline authentication regression cases passed (\(fixtureClientPlatform)).")
 }

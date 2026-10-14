@@ -1,4 +1,4 @@
-name: Build AltServer -80045 Hotfix
+name: Build AltServer and AltStore -80045 Hotfix
 
 on:
   push:
@@ -46,7 +46,10 @@ jobs:
           cat build/artifacts/build-info.txt
 
       - name: Run offline authentication regressions
-        run: python3 Tests/Apple80045/run.py | tee build/artifacts/regression.log
+        run: |
+          python3 Tests/Apple80045/run.py | tee build/artifacts/regression-macos.log
+          python3 Tests/Apple80045/run.py --client-platform ios | tee build/artifacts/regression-ios-routing.log
+          python3 Tests/Apple80045/transport.py | tee build/artifacts/regression-transport.log
 
       - name: Build AltServer for Apple Silicon
         run: |
@@ -70,14 +73,68 @@ jobs:
           test -d "$app"
           python3 scripts/sign-personal-macos-app.py "$app"
           codesign --verify --deep --strict --verbose=2 "$app"
-          ditto -c -k --sequesterRsrc --keepParent "$app" build/artifacts/AltServer-80045-arm64.zip
-          shasum -a 256 build/artifacts/AltServer-80045-arm64.zip > build/artifacts/SHA256SUMS
+          ditto -c -k --sequesterRsrc --keepParent "$app" build/artifacts/AltServer-80045-v2-arm64.zip
+          shasum -a 256 build/artifacts/AltServer-80045-v2-arm64.zip > build/artifacts/SHA256SUMS
 
       - name: Upload app and diagnostics
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: AltServer-80045-arm64-${{ github.run_number }}
+          name: AltServer-80045-v2-arm64-${{ github.run_number }}
+          path: build/artifacts/
+          if-no-files-found: warn
+          retention-days: 14
+
+  ios:
+    runs-on: xcode-27
+    timeout-minutes: 45
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
+    steps:
+      - name: Check out source and pinned submodules
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Apply GrandSlam and transport hotfix
+        run: sh scripts/apply-apple-80045-hotfix.sh
+
+      - name: Build AltStore for iPhone
+        run: |
+          mkdir -p build/artifacts
+          git rev-parse HEAD > build/artifacts/build-info.txt
+          xcodebuild -version >> build/artifacts/build-info.txt
+          xcodebuild \
+            -workspace AltStore.xcworkspace \
+            -scheme AltStore \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build/DerivedData \
+            -resultBundlePath build/AltStore.xcresult \
+            ARCHS=arm64 ONLY_ACTIVE_ARCH=YES IPHONEOS_DEPLOYMENT_TARGET=17.4 \
+            BUILD_VARIANTS=normal RUN_CLANG_STATIC_ANALYZER=NO \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY= DEVELOPMENT_TEAM= \
+            ENABLE_USER_SCRIPT_SANDBOXING=NO \
+            build 2>&1 | tee build/artifacts/xcodebuild-ios.log
+
+      - name: Package IPA for AltServer signing
+        run: |
+          app=build/DerivedData/Build/Products/Release-iphoneos/AltStore.app
+          test -d "$app"
+          mkdir -p build/ipa/Payload
+          ditto "$app" build/ipa/Payload/AltStore.app
+          cd build/ipa
+          zip -q -r ../artifacts/AltStore-80045-v2.ipa Payload
+          cd ../..
+          shasum -a 256 build/artifacts/AltStore-80045-v2.ipa > build/artifacts/SHA256SUMS
+
+      - name: Upload IPA and diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: AltStore-80045-v2-iphone-${{ github.run_number }}
           path: build/artifacts/
           if-no-files-found: warn
           retention-days: 14
