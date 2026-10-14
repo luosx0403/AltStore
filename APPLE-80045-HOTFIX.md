@@ -13,13 +13,23 @@ AnisetteKit lookup/provisioning、ALTAnisetteData.deviceDescription、短信请�
 
 已完成验证：
 
-- 实际 AltSign Swift target 编译成功，包含修改过的认证源码。CLT 编译时用临时 include 路径提供 OpenSSL 头文件，未修改依赖或 Package.swift。
+- 实际 AltSign Swift target 与完整 AltSign-Static 静态库均编译成功，包含修改过的认证源码。CLT 编译时用临时 include 路径提供 OpenSSL 头文件。
 - `python3 Tests/Apple80045/run.py`：11 个离线用例全部通过，覆盖身份范围、已推送验证码、原可信设备流程、SMS、无需 2FA、无 UI、用户取消、错误验证码、HTTP 503、Apple API 错误和错误密码。
 - 对照：原始源码在 GrandSlam 身份检查失败；只改身份的源码在 hsc=409 验证码提示检查失败。
 - 测试执行实际认证源码，替换 CAltSign 模型/密码学依赖和 URLSession transport 为离线 fixtures；不测试真实 SRP、真实 Apple 服务或设备安装。
 - 未执行 Apple 账号登录、证书创建或 IPA 安装，未读取用户账号凭据。
 
-当前构建限制：本机尚未安装完整 Xcode。`xcodebuild -workspace AltStore.xcworkspace -scheme AltServer ... build` 因此在启动阶段失败，尚无可运行 AltServer.app。单独 SwiftPM 动态库链接也依赖父 Xcode 工程提供的 corecrypto，不能将 Swift target 编译成功解释为 App 构建成功。
+本机构建限制：本机尚未安装完整 Xcode，不能本地执行完整 xcodebuild。已通过 GitHub Actions 完成整个 AltServer App 的构建、ad-hoc 签名、深度签名验证及 ZIP 打包，无需本机安装 Xcode。
+
+成功构建记录：
+
+- https://github.com/luosx0403/AltStore/actions/runs/38623380907
+- 实际编译 commit：216266fa5b53e97915469ad5082d665cef19bc23。
+- 产物：AltServer-80045-arm64.zip，Apple Silicon，最低 macOS 27.0。
+- 源工程版本标签：AltServer 1.8，build 97；未伪造版本号。
+- ZIP SHA-256：adcc7b20c75e4cef35f37b55174e0712ec79e92fd09448c10304ea42dec10676。
+- 已下载产物核对校验和、arm64 架构、嵌入的 Pixel 5 身份及全部嵌套代码签名。
+- 真实 Apple 登录、2FA、签名和设备安装尚未测试；未替换本机原版 AltServer。
 
 安装完整 Xcode 并完成首次启动后，可从此 clone 执行以下构建尝试；若 Xcode 不在 /Applications，请调整 DEVELOPER_DIR：
 
@@ -29,6 +39,8 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
   xcodebuild -workspace AltStore.xcworkspace \
   -scheme AltServer -configuration Release \
   -destination 'platform=macOS' -derivedDataPath build/hotfix \
+  ARCHS=arm64 MACOSX_DEPLOYMENT_TARGET=27.0 \
+  BUILD_VARIANTS=normal RUN_CLANG_STATIC_ANALYZER=NO \
   CODE_SIGNING_ALLOWED=NO build
 ```
 
