@@ -1,13 +1,12 @@
 diff --git a/Package.swift b/Package.swift
-index 89205ae..4e5d96a 100644
+index 89205ae..d492d79 100644
 --- a/Package.swift
 +++ b/Package.swift
-@@ -86,7 +86,7 @@ let package = Package(
+@@ -18,6 +18,7 @@ let package = Package(
          ),
-         .target(
-             name: "ldid",
--            dependencies: ["ldid-core"],
-+            dependencies: ["ldid-core", "OpenSSL"],
-             path: "AltSign/ldid",
-             exclude: [
-                 "alt_ldid.hpp",
+         .library(
+             name: "AltSign-Static",
++            type: .static,
+             targets: ["AltSign", "CAltSign", "AltCrypto", "CAltCrypto", "ldid", "ldid-core"]
+         ),
+     ],

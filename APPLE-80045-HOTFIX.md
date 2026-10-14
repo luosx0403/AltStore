@@ -40,7 +40,7 @@ AltSign 是子模块，父仓库只会显示 dirty，直接提交父仓库不会
 
 CI 使用显式 bash / pipefail，保证 tee 不会掩盖 xcodebuild 失败。Xcode 27 要求最低 macOS 12，因此此个人 arm64 构建统一以 MACOSX_DEPLOYMENT_TARGET=12.0 覆盖旧依赖的 macOS 11 设置。此 App 只构建 normal 变体，关闭 CoreCrypto 默认启用的 deep static analyzer，避免生成 trace/noasm 变体和重复分析。源工程和依赖原有部署配置保留。
 
-`Patches/xcode-27-altsign-build.patch` 补全 AltSign 的 SwiftPM 清单中 ldid 对 OpenSSL 的依赖声明。云端实际日志证明，缺少此声明时 Xcode 27 会在生成 ldid.framework 时无法解析 OpenSSL 符号。应用脚本同时重放认证补丁和此构建补丁；这是构建依赖修正，不涉及认证协议。
+`Patches/xcode-27-altsign-build.patch` 将名为 AltSign-Static 的 SwiftPM 产品明确声明为 static。原清单省略 type，允许 Xcode 27 选择动态 framework，导致中间 ldid.framework 无法解析父工程链接的 OpenSSL 符号。显式静态链接使用源工程已有的 OpenSSL/CoreCrypto 依赖关系，避免 SwiftPM 和父工程重复处理同一 XCFramework。应用脚本同时重放认证补丁和此构建补丁；这是构建方式修正，不涉及认证协议。
 
 只撤回本补丁时，在确认没有后续重叠修改后执行：
 
