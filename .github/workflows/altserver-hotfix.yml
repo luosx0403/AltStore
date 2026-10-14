@@ -100,6 +100,11 @@ jobs:
       - name: Apply GrandSlam and transport hotfix
         run: sh scripts/apply-apple-80045-hotfix.sh
 
+      - name: Align legacy arm64 static libraries for the modern linker
+        run: |
+          mkdir -p build/artifacts
+          python3 scripts/normalize-ios-static-libraries.py | tee build/artifacts/archive-normalization.log
+
       - name: Build AltStore for iPhone
         run: |
           mkdir -p build/artifacts
