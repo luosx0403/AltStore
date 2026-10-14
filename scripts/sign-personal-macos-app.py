@@ -11,6 +11,10 @@ app = Path(sys.argv[1]).resolve(strict=True)
 if app.suffix != ".app" or not (app / "Contents/Info.plist").is_file():
     raise SystemExit("Expected a macOS .app bundle")
 
+# Framework archives and Finder copies can retain metadata that codesign rejects.
+# Clean only the build output passed to this script, before signing nested code.
+subprocess.run(["xattr", "-cr", str(app)], check=True)
+
 macho_magic = {b"\xfe\xed\xfa\xce", b"\xce\xfa\xed\xfe", b"\xfe\xed\xfa\xcf", b"\xcf\xfa\xed\xfe", b"\xca\xfe\xba\xbe", b"\xbe\xba\xfe\xca", b"\xca\xfe\xba\xbf", b"\xbf\xba\xfe\xca"}
 files = []
 bundles = []

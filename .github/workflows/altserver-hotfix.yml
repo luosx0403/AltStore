@@ -9,6 +9,10 @@ on:
 permissions:
   contents: read
 
+defaults:
+  run:
+    shell: bash
+
 concurrency:
   group: altserver-hotfix-${{ github.ref }}
   cancel-in-progress: true
@@ -53,7 +57,7 @@ jobs:
             -destination 'generic/platform=macOS' \
             -derivedDataPath build/DerivedData \
             -resultBundlePath build/AltServer.xcresult \
-            ARCHS=arm64 ONLY_ACTIVE_ARCH=YES \
+            ARCHS=arm64 ONLY_ACTIVE_ARCH=YES MACOSX_DEPLOYMENT_TARGET=12.0 \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY= DEVELOPMENT_TEAM= \
             ENABLE_USER_SCRIPT_SANDBOXING=NO \

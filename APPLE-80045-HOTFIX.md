@@ -38,6 +38,8 @@ AltSign 是子模块，父仓库只会显示 dirty，直接提交父仓库不会
 
 已增加 GitHub Actions 构建入口：`.github/workflows/altserver-hotfix.yml`。推送到 hotfix/apple-80045 后自动运行，采用 GitHub 预装 Xcode 27 的 macOS 27 / arm64 runner。Actions 会递归检出固定版本依赖、重放子模块补丁、运行离线回归、构建 AltServer，再对嵌套代码和 App 逐层执行 ad-hoc 签名，上传 ZIP、校验和与日志。无需在本机安装完整 Xcode，也无需上传 Apple ID 或签名证书。该产物供个人测试，未做 Developer ID 签名或 Apple 公证。iOS IPA 不在此次构建范围内。
 
+CI 使用显式 bash / pipefail，保证 tee 不会掩盖 xcodebuild 失败。Xcode 27 要求最低 macOS 12，因此此个人 arm64 构建统一以 MACOSX_DEPLOYMENT_TARGET=12.0 覆盖旧依赖的 macOS 11 设置。源工程和依赖原有部署配置保留。
+
 只撤回本补丁时，在确认没有后续重叠修改后执行：
 
 ```sh
